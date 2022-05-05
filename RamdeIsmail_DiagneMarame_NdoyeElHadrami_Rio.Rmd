@@ -1,0 +1,373 @@
+---
+title: 'Projet_serie_temporelle (Jeu de donnée RIO) '
+author: "DIAGNE Marame & RAMDE Ismeal & NDOYE Elhadrami"
+date: "18/01/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+#library(dplyr)
+library(forecast)
+```
+
+
+Les données  sont collectées dans un fichier csv station_rio.csv. On veut créer un objet de type séries temporelles. Les données sont mensuelles et contiennent la température de Rio entre janvier 1973 et Décembre 2019 
+
+```{r}
+data1 = read.csv("station_rio.csv")
+```
+
+### Traitement des données 
+
+```{r}
+dataset_month = data1[,2:13]
+write.table(dataset_month,"dataset_scan.csv", row.names = FALSE,quote = FALSE)
+data_clean = read.csv("dataset_scan.csv",sep=" ")
+data_clean_mat = as.matrix(data_clean)
+for(i in 1:dim(data_clean_mat)[1]){
+  for(j in 1:dim(data_clean_mat)[2]){
+    if(data_clean_mat[i,j] == 999.9){
+      data_clean_mat[i,j] = NA
+      data_clean_mat[i,j] = median(data_clean_mat[,j],na.rm=TRUE)
+    }
+  }
+}
+write.table(data_clean_mat,"mydata.csv", row.names = FALSE,quote = FALSE)
+dataset_scan = scan("mydata.csv",skip=1)
+mydata_ts = ts(dataset_scan,start = c(1973,1),end=c(2019,12),frequency = 12)
+plot(mydata_ts, main = "Moyenne annuelle des températures de Rio", xlab = "Années", ylab = "Température",xlim = c(1973,2019))
+```
+
+
+Ce graphique représente la série temporelle de la température mensuelle en fonction du temps par une courbe. Le temps est indiqué en nombre de périodes.
+
+On constate qu'il n'y a pas de tendance.
+
+Pour regarder la  saisonnalité on peut zoomer par exemple sur les  deux premiers années consécutives :
+
+### Représentaion d'une période annuelle 
+
+```{r}
+tsvar11 = ts(mydata_ts,start = c(1973,1), end = c(1974,12),frequency= 12)
+plot.ts(tsvar11,col = "blue")
+```
+Une période annuelle (de 1973, à 1974) présente des pics de température mensuelle  autour de fevrier-Mars et des
+valeurs très basses autour de Juin.
+
+
+### Auto-corrélation
+
+On considére  l’observation de la série pendant 2, 10, 20 et 41,5 ans. Soit les n premières valeurs de la
+séries pour n = 24, 120, 240 et 564 (longueur de la série collectée)
+
+```{r}
+par(mfrow=c(2,2))
+tsvar2 = ts(mydata_ts, start = c(1973,1), end = c(1974,12),frequency=12)
+acf(tsvar2,lag.max = 25,type = "correlation",ylim = c(-1,1),plot=TRUE,main = "auto-correlations avec n=24 ")
+curve(cos(x*2*pi),col = 3,add=TRUE)
+tsvar10 = ts(mydata_ts, start =c(1973,1),end = c(1980,12),frequency=12)
+acf(tsvar10,lag.max = 25,type="correlation",ylim = c(-1,1),plot=TRUE,main = "auto-correlations avec  n=120")
+curve(cos(x*2*pi),col=3,add=TRUE)
+tsvar20 = ts(mydata_ts,start=c(1973,1),end = c(1990,12),frequency=12)
+acf(tsvar20,lag.max = 25,type="correlation",ylim = c(-1,1),plot=TRUE,main = "auto-correlations avec  n=240")
+curve(cos(x*2*pi),col = 3,add=TRUE)
+tsvar = ts(mydata_ts,start=c(1973,1),end=c(2019,12),frequency=12)
+acf(tsvar,lag.max = 25,type = "correlation",ylim = c(-1,1),plot = TRUE,main = "acf  série complète n=564")
+curve(cos(x*2*pi),col = 3,add=TRUE)
+```
+
+```{r}
+acf(mydata_ts,lag.max = 50,type ="correlation", plot=TRUE,main="Auto-correlations de Rio")
+curve(cos(x*2*pi),col = 3,add = TRUE)
+```
+
+On peut observer la similitude de plus en plus grande de la suites des fonctions d’auto-correlations vers une fonction périodique de période 12 représentée par la courbe verte
+
+### Les effets saisonnier
+
+```{r}
+library(ggplot2)
+library(forecast)
+ggseasonplot(mydata_ts,polar=TRUE)+
+ggtitle('Effets saisonniers de 1973 à 2019 de Rio')+
+xlab('mois')+
+ylab('Température')
+
+```
+
+```{r}
+library(ggplot2)
+library(forecast)
+ggseasonplot(mydata_ts,year.labels = TRUE,year.labels.left = TRUE)+
+ggtitle('Effets saisonniers de 1973 à 2019 de Rio')+
+xlab('Années')+
+ylab('Température')
+```
+
+```{r}
+rio_df = as.vector(mydata_ts)
+rio_df = matrix(rio_df,nrow = 47,ncol = 12,byrow = TRUE)
+rio_df = as.data.frame(rio_df)
+rio_df_mean = as.data.frame(apply(rio_df, 1,mean))
+rio_df_mean$year = 1973:2019
+colnames(rio_df_mean) = c("temperature_moyenne",'year')
+plot(rio_df_mean$year,rio_df_mean$temperature_moyenne,type = 'l',xlab = "année",ylab = "température moyenne",col ="blue",
+     main = "température moyenne par année")
+```
+
+
+### Chronique annuelles de 1973 à 1980
+
+```{r}
+par(mfrow = c(1,1))
+plot.ts(mydata_ts[1:12],ylim = c(min(tsvar), max(tsvar)), xlim = c(1,12), main = "chroniques annuelles de 1973 à 1980")
+N = 4
+N0 = 1
+for (i in N0:N)
+lines(mydata_ts[(12*i+1):(12*(i+1))],col=i+1,lty=1)
+legend("topright",legend=c("1973","1974","1975","1976","1977"),
+col = c(1,N0:N),lty=c(1,rep(1,N-N0+1)))
+```
+Selon les années les pics de la température sont observés autour des  mois de Mars, avril et mai. 
+
+### Ajustement de la tendance
+
+```{r}
+autoplot(mydata_ts, series="Data") + 
+autolayer(ma(mydata_ts,50), series="MM(50)") +
+autolayer(ma(mydata_ts,300), series="MM(300)") +
+xlab("Année") + ylab("Température") +
+ggtitle("Moyenne annulle des températures de Rio") +
+scale_colour_manual(
+values=c("Data"="grey50","MM(50)"="red","MM(300)"="blue"),
+breaks=c("Data","MM(50)","MM(300)"))
+```
+
+### Décomposition de la série 
+
+```{r}
+decomposition <- decompose(mydata_ts)
+par(mfrow = c(3,1))
+plot(decomposition$trend,type = "l",main = "Tendance",col = "dark green", xlab = "Temps", ylab = "");
+plot(decomposition$seasonal,type = "l",main = "Saisonnière",col = "blue", xlab = "Temps", ylab = "");
+plot(decomposition$random,type = "l",main = "Bruit",col = "red", xlab = "Temps", ylab = "")
+```
+
+```{r}
+plot(decomposition)
+```
+
+
+### Prédiction avec les méthodes de lissage 
+
+Pour faire le meilleur choix de la méthode de lissage on prend environ 80% de la série pour constituer l’échantillon d’apprentissage (les 38 années de 1973 à 2010) et le reste (les 9 dernières années) pour l’échantillon test.
+
+```{r}
+rio_train = head(mydata_ts, 12*38)
+rio_test = tail(mydata_ts, 12*9)
+```
+
+#### Lissage exponentielle simple
+
+```{r}
+LES = HoltWinters(rio_train,beta=FALSE,gamma=FALSE)
+ps = predict(LES, n.ahead = 564*0.2)
+RMSE_LES = sqrt(mean(ps-rio_test)^2)
+RMSE_LES
+```
+
+#### Lissage exponentielle double
+
+```{r}
+alp_opt<-(1:9)/10
+RMSE_LED=rep(0,9)
+for (k in (1:9)){
+  LED = HoltWinters(rio_train,alpha = alp_opt[k]*(2-alp_opt[k]),
+  beta = alp_opt[k]/(2-alp_opt[k]),gamma = FALSE)
+  pd = predict(LED, n.ahead = 9*12)
+  RMSE_LED[k] = sqrt(mean(pd- rio_test)^2)
+}
+alp = which((RMSE_LED <= min(RMSE_LED))==TRUE)*0.1
+LED = HoltWinters(rio_train,alpha = alp*(2-alp), beta = alp/(2-alp),gamma = FALSE)
+pd = predict(LED, n.ahead =  9*12)
+RMSE_LED = sqrt(mean(pd-rio_test)^2)
+```
+
+#### lissage de HoltWinters non saisonnier
+
+```{r}
+HWNS = HoltWinters(rio_train,gamma = FALSE)
+pns = predict(HWNS, n.ahead = 9*12)
+RMSE_HWNS = sqrt(mean(pns-rio_test)^2)
+RMSE_HWNS
+```
+#### lissage de HoltWinters saisonnier additif
+
+```{r}
+HWSA = HoltWinters(rio_train,seasonal = "additive")
+psa = predict(HWSA, n.ahead = 9*12)
+RMSE_HWSA = sqrt(mean(psa-rio_test)^2)
+RMSE_HWSA
+```
+
+#### lissage de HoltWinters saisonnier multiplicatif
+
+```{r}
+HWSM = HoltWinters(rio_train,seasonal = "multiplicative")
+psm = predict(HWSM, n.ahead = 9*12)
+RMSE_HWSM = sqrt(mean(psm-rio_test)^2)
+RMSE_HWSM 
+```
+
+```{r}
+RMSE_LES
+RMSE_LED
+RMSE_HWNS
+RMSE_HWSA
+RMSE_HWSM 
+MSE = rbind(RMSE_LES,RMSE_LED,RMSE_HWNS,RMSE_HWSA,RMSE_HWSM)
+rownames(MSE) = c("LES","LED","HWNS","HWSA","HWSM")
+colnames(MSE) = "MSE"
+```
+
+S’agissant de la prévision sur les 9 dernières années, de toute évidence le lissage de HoltWinters additif est
+le meilleur. C’est donc la méthode qu'on va choisir pour prévoir la température mensuelle  suivant la dernière année d’observation.
+
+```{r}
+HWSA = HoltWinters(rio_train,seasonal = "additive")
+psa = predict(HWSA, n.ahead = 9*12,prediction.interval = TRUE)
+plot(HWSA,psa)
+```
+
+```{r}
+H = HoltWinters(mydata_ts,seasonal = "additive")
+pred_2023 <- predict(H, n.ahead = 36)
+
+plot(HWSA,main=" Température de 73 à 2011 avec prévisions de 2012 à 2019 (Rio)",ylab="obs. (noir)/ ajus. (rouge)",
+     ylim = c(15,35),xlim = c(1973,2023))
+
+
+psac <- predict(HWSA, n.ahead = 12*9, prediction.interval = TRUE)
+#lines(HWSA$fitted[,1],lty=2,col=3)
+lines(mydata_ts)
+lines(psac[,1],col = 2,lty = 2)
+lines(psac[,2],col = 3,lty = 3)
+lines(psac[,3],col = 3,lty = 3)
+lines(pred_2023, col = 4,lty = 4)
+RMSE_HWSA = sqrt(mean(psac[,1]-rio_test)^2)
+abline(v = 2011)
+text(1980,32,paste0("RMSE = ",round(RMSE_HWSA,3)),col=1,cex=0.9)
+
+```
+
+### Prediction par arima, sarima et auto-arima
+
+#### ACF et PACF
+
+```{r}
+par(mfrow = c(1,2))
+acf(mydata_ts)
+pacf(mydata_ts)
+```
+D'apres la courbe de l'ACF et PACF, on voit bien qu'il  y'a saisonnalité.
+
+Il nous suggére aussi  un MA(3) d'apre=s la courbe  ACF et AR(1) d'apres PACF.
+
+```{r}
+ma3 =  Arima(mydata_ts,order = c(0,0,3), seasonal = c(0,0,0))
+ma3
+```
+
+Calculons Les p-valeurs des tests $H_0 : b_k = 0$. Pas de raisons de bBaisser l’ordre
+
+```{r}
+st = ma3$coef/(sqrt(diag(ma3$var.coef)))
+2*(1-pnorm(abs(st))) #pval
+```
+On conclut $b_3 = 0$ baissons l'ordre à MA(2) pour comparer les valeurs des critères AIC ou BIC pour voir.
+
+```{r}
+ma2 =  Arima(mydata_ts,order = c(0,0,2), seasonal = c(0,0,0))
+ma2
+```
+MA(3) (AIC = 1968.5 et BIC = 1990.07) reste meilleur que MA(2) mais on peut remarquer que ce n’est pas très significatif.
+
+```{r}
+ar1 = Arima(mydata_ts,order = c(1,0,0), seasonal = c(0,0,0))
+ar1
+```
+#### Modéle avec choix automatique de la complexité
+
+```{r}
+auto_arima = auto.arima(mydata_ts)
+auto_arima
+```
+
+#### Validation des résidus 
+
+```{r}
+bxtest =  Box.test(auto_arima$residuals)
+par(mfrow = c(1,3))
+acf(auto_arima$residuals)
+text(1,0.8,paste0("pval BP = ",round(bxtest$p.value,3)),col=1,cex=1)
+pacf(auto_arima$residuals)
+text(1,0.06,paste0("pval BP = ",round(bxtest$p.value,3)),col=1,cex=1)
+qqnorm(auto_arima$residuals);qqline(auto_arima$residuals,col=2)
+```
+La pvaleur indique qu’on peut dire que la partie résiduelle est un bruit blanc car étant tres grande. 
+
+#### Prédiction par ARIMA(2,0,2)(2,1,0) et AR(1)
+
+```{r}
+forecast(ar1, h = 1)
+forecast(auto_arima, h = 1)
+```
+
+```{r}
+autoplot(forecast(ar1,h = 36))
+```
+
+```{r}
+autoplot(forecast(auto_arima, h = 36)) + xlab("Année") + ylab("Température") + ggtitle("Modéle auto.arima pour la ville de Rio")
+```
+
+```{r}
+rio_diff = diff(mydata_ts,lag = 12)
+Box.test(rio_diff)
+```
+
+```{r}
+acf(rio_diff)
+pacf(rio_diff)
+```
+
+```{r}
+arma_diff1 = Arima(rio_diff,order = c(2,0,0))
+arma_diff1
+arma_diff2 = Arima(rio_diff,order = c(0,0,3))
+arma_diff2
+arma_diff3 = Arima(rio_diff,order = c(2,0,3))
+arma_diff3
+arma_diff4 = Arima(rio_diff,order = c(3,0,2))
+arma_diff4
+```
+
+```{r}
+autoplot(forecast(arma_diff4,h = 36))
+```
+
+#### SARIMA
+
+```{r}
+sar = Arima(mydata_ts,order=c(1,0,3),seasonal = list(order=c(1,0,3),period=12))
+sar
+```
+On choisit  Sarima comme meilleur modéle 

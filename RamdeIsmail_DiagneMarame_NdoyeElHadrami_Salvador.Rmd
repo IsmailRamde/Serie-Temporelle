@@ -1,0 +1,459 @@
+---
+title: "Série Temporelle (Jeu de données Salvador)"
+author: "RAMDÉ Ismaïl"
+date: "18/01/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Library
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+```
+
+# Chargement des données
+```{r}
+data = read.csv("/home/ismael/Bureau/Master_2/cours_S1/Series Temporelles/Projet/Bresil/station_salvador.csv")
+head(data)
+```
+
+
+# Prétraitement
+```{r}
+#Combinaison de données mensuelles dans un seul tableau
+data_set<-data[, 2:13]
+```
+
+
+```{r}
+write.table(data_set,"dataset.csv", row.names = FALSE,quote = FALSE)
+data_clean = read.csv("dataset.csv",sep=" ")
+data_clean_mat = as.matrix(data_clean)
+for(i in 1:dim(data_clean_mat)[1]){
+  for(j in 1:dim(data_clean_mat)[2]){
+    if(data_clean_mat[i,j] == 999.9){
+      data_clean_mat[i,j] = NA
+      data_clean_mat[i,j] = median(data_clean_mat[,j],na.rm=TRUE)
+    }
+  }
+}
+write.table(data_clean_mat,"mydata.csv", row.names = FALSE,quote = FALSE)
+```
+
+
+
+
+# statistique descriptive
+
+```{r}
+dataset_scan = scan("mydata.csv",skip=1)
+
+# Création d'un objet de type série temporelle contenant cette série
+Salvador.temp = ts(dataset_scan,start=c(1973,1),end=c(2019,12),freq=12)
+
+head(Salvador.temp)
+str(Salvador.temp)
+summary(Salvador.temp)
+```
+
+# Analyse
+
+## Barplot
+```{r}
+boxplot(Salvador.temp, horizontal=TRUE, main = 'Barplot')
+```
+
+
+## Représentation de la série
+```{r}
+# plot.ts(Salvador.temp, main="Moyenne annuelle des températures de Salvador",
+# ylab="Température",xlab="Années")
+#plot.ts(Salvador.temp, lwd=1.5, col="dark green", main="Moyenne mensuelle des températures de Salvador", xlab = "Années", ylab = "Température")
+
+plot.ts(Salvador.temp, main="Moyenne annuelle des températures de Salvador", xlab = "Années", ylab = "Température", xlim=c(1971,2020))
+```
+
+On remarque que la série semble être croissante avec des variations.
+
+
+
+## Graphique des autocorrelations
+```{r}
+#auto.arima(Salvador.temp)
+```
+```{r}
+acf(Salvador.temp,lag.max=50,type="correlation", plot=TRUE,main="Auto-correlations de Salvador ")
+curve(cos(x*2*pi),col=3,add=TRUE)
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+acf(Salvador.temp,lag.max=25,type="correlation", plot=TRUE,main="auto-correlations avec n=25 ")
+curve(cos(x*2*pi),col=3,add=TRUE)
+acf(Salvador.temp,lag.max=50,type="correlation", plot=TRUE,main="auto-correlations avec n=25 ")
+curve(cos(x*2*pi),col=3,add=TRUE)
+acf(Salvador.temp,lag.max=75,type="correlation", plot=TRUE,main="auto-correlations avec n=25 ")
+curve(cos(x*2*pi),col=3,add=TRUE)
+acf(Salvador.temp,lag.max=100,type="correlation", plot=TRUE,main="auto-correlations avec n=25 ")
+curve(cos(x*2*pi),col=3,add=TRUE)
+```
+
+On observe sur le graphique d'auto-corrélation une saisonnalité.
+
+Nous allons à présent désaisonnaliser la série afin de confirmer ou infirmer la tendance :
+
+
+## Ajustement de la tendance
+```{r}
+ajust.tend1 = ma(Salvador.temp, 10)
+ajust.tend2 = ma(Salvador.temp, 50)
+ajust.tend3 = ma(Salvador.temp, 300)
+#ajust.tend4 = ma(Salvador.temp, 600)
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(Salvador.temp)
+par(new=TRUE)
+plot(ajust.tend1, col = "red")
+title("Ajustement moyenne mobile VS la série")
+plot(Salvador.temp)
+par(new=TRUE)
+plot(ajust.tend2, col = "red")
+title("Ajustement moyenne mobile VS la série")
+plot(Salvador.temp)
+par(new=TRUE)
+plot(ajust.tend3, col = "red")
+title("Ajustement moyenne mobile VS la série")
+plot(Salvador.temp)
+par(new=TRUE)
+#plot(ajust.tend4, col = "red")
+title("Ajustement moyenne mobile VS la série")
+```
+
+Tendance croissante avérée.
+
+
+```{r}
+autoplot(Salvador.temp, series="Data") + 
+autolayer(ma(Salvador.temp,50), series="MM(50)") +
+autolayer(ma(Salvador.temp,300), series="MM(300)") +
+xlab("Année") + ylab("Température") +
+ggtitle("Moyenne annulle des températures de Salvador") +
+scale_colour_manual(
+values=c("Data"="grey50","MM(50)"="red","MM(300)"="blue"),
+breaks=c("Data","MM(50)","MM(300)"))
+```
+
+Tendace croissante.
+
+
+## Evolutions mensuelles (saisonnières) par année entre 1931 et 1935
+
+```{r}
+ggseasonplot(Salvador.temp,year.labels= TRUE,year.labels.left=TRUE)+
+ggtitle('Effets saisonniers de 1973 à 2019 de Salvador')+
+xlab('Années')+
+ylab('Température')
+```
+
+
+
+```{r}
+ggseasonplot(Salvador.temp,polar=TRUE)+
+ggtitle('Effets saisonniers de 1973 à 2019')+
+xlab('Années')+
+ylab('Température')
+```
+
+
+ 
+
+
+## Décomposition (estimation des composantes)
+```{r}
+decomp<-decompose(Salvador.temp,type="multiplicative")
+plot(decomp)
+```
+
+
+<!-- 1. lisser la série de départ avec MM(T ) : decompose(x)$trend -->
+<!-- 2. Estimer les coefficients saisonniers decompose(x)$figure -->
+<!-- 3. Série des effets saisonniers decompose(x)$seasonal -->
+<!-- 4. Calculer la partie résiduelle decompose(x)$trend -->
+
+
+
+## Estimation des paramètres d'une tendance linéaire at + b
+
+```{r}
+#serie desaisonnalisée
+Salvador.temp_des = Salvador.temp - decomp$seasonal
+
+t1 = 1:564
+t2 = t1^2
+t3 = t1^3
+
+lm1<-lm(Salvador.temp_des~t1) 
+lm2<-lm(Salvador.temp_des~t1+t2)
+lm3<-lm(Salvador.temp_des~t1+t2+t3)
+c(summary(lm1)$r.squared,summary(lm2)$r.squared,
+summary(lm3)$r.squared)
+
+c(summary(lm1)$adj.r.squared,summary(lm2)$adj.r.squared,
+summary(lm3)$adj.r.squared)
+```
+
+```{r}
+mean(Salvador.temp_des)
+```
+
+
+
+```{r}
+(a = lm1$coefficients[1])
+(b = lm1$coefficients[2])
+```
+
+
+
+
+Supprimons à présent la tendance et analysons le reste obtenu dans les deux cas.
+ 
+
+```{r}
+# Sans tendance
+Salvador.temp_ss_tend = Salvador.temp-lm1$fitted.values
+
+par(mfrow=c(2,2))
+plot.ts(Salvador.temp_ss_tend, main="serie x_t sans tendance linéaire",cex=0.5)
+moy<-mean(Salvador.temp-lm1$fitted.values)
+text(1950,100,paste0("moy = ",round(moy,5)),col=2,cex=0.9)
+acf(Salvador.temp-lm1$fitted.values,lag.max = 24,cex=0.5)
+```
+
+
+
+## Estimation ARIMA, SARIMA, auto.arima
+
+### Sarima
+```{r}
+# sarima
+acf(Salvador.temp)
+pacf(Salvador.temp)
+sar = Arima(Salvador.temp, order=c(1,1,3), seasonal = list(order=c(1,1,3),period=12))
+sar
+```
+
+```{r}
+autoplot(forecast(sar,h=36))+
+ggtitle('Modèle SARIMA pour la ville de Salvador')+
+xlab('Années')+
+ylab('Température')
+```
+
+
+
+
+```{r}
+Salvador.temp.diff = diff(Salvador.temp, lag = 12)
+```
+
+
+
+### Arima
+```{r}
+tend = Salvador.temp - decomp$seasonal
+par(mfrow=c(1,2))
+acf(tend)
+pacf(tend)
+```
+
+```{r}
+ari = Arima(tend, order = c(1,1,3))
+ari
+```
+
+```{r}
+autoplot(forecast(ari), h=120)
+```
+
+
+### auto arima
+```{r}
+auto_sal = auto.arima(Salvador.temp)
+auto_sal
+autoplot(forecast(auto_sal), h=120)
+```
+
+
+
+
+
+# Lissage exponentiel
+## Première prédiction avec un modèle Holt-Winter
+
+```{r}
+fitHW1 <- hw(Salvador.temp, h=12, seasonal="multiplicative", level=c(95), frequency=12)
+fitHW2 <- hw(Salvador.temp, h=50, seasonal="multiplicative", level=c(95), frequency=12)
+
+#par(mfrow=c(1,2))
+plot(fitHW1)
+plot(fitHW2)
+```
+
+
+
+
+```{r, echo=TRUE}
+
+#train set
+train<-head(Salvador.temp,400)
+# test set
+test<-tail(Salvador.temp,164)
+
+
+#lissage exponentiel simple
+LES=HoltWinters(train,beta=FALSE,gamma=FALSE)
+ps<-predict(LES, n.ahead = 164)
+RMSE_LES=sqrt(mean(ps-test)^2); 
+
+#plot(LES, main=paste("LES avec alpha =", round(alp,2)))
+#lines(ts(Salvador.temp)) #ajout du test set
+#p<-predict(LES,n.ahead=100);lines(p,col=2,lty=2)
+
+#lissage exponentiel double
+alp_opt<-(1:9)/10
+RMSE_LED=rep(0,9)
+for (k in (1:9))
+{
+  LED=HoltWinters(train,alpha=alp_opt[k]*(2-alp_opt[k]),
+                  beta=alp_opt[k]/(2-alp_opt[k]),gamma=FALSE)
+  pd<-predict(LED, n.ahead=164)
+  RMSE_LED[k]=sqrt(mean(pd-test)^2)
+}  
+
+which((RMSE_LED<=min(RMSE_LED))==TRUE)*0.1->alp  #meilleur lissage à 10^-1 près pour LED
+LED=HoltWinters(train,alpha=alp*(2-alp), beta=alp/(2-alp),gamma=FALSE)
+  pd<-predict(LED, n.ahead=164)
+  RMSE_LED=sqrt(mean(pd-test)^2)
+  
+#lissage de HoltWinters non saisonnier
+ HWNS=HoltWinters(train,gamma=FALSE)
+  pns<-predict(HWNS, n.ahead=164)
+  RMSE_HWNS=sqrt(mean(pns-test)^2) 
+  
+#lissage de HoltWinters  saisonnier additif
+ HWSA=HoltWinters(train,seasonal = "additive")
+  psa<-predict(HWSA, n.ahead=164)
+  RMSE_HWSA=sqrt(mean(psa-test)^2)
+  
+#lissage de HoltWinters  saisonnier multiplicatif
+ HWSM=HoltWinters(train,seasonal = "multiplicative")
+ psm<-predict(HWSM, n.ahead=164)
+ RMSE_HWSM=sqrt(mean(psm-test)^2) 
+```
+On obtient les erreurs de prédiction suivante selon le lissage choisi
+
+```{r pressure, echo=FALSE}
+print(c("LES","LED","HWNS","HWSA","HWSM"))
+print(c(RMSE_LES, RMSE_LED, RMSE_HWNS,  RMSE_HWSA, RMSE_HWSM))
+```
+
+
+S'agissant de la prévision sur les huit dernières années, de toute évidence le lissage de HoltWinters additif
+est le meilleur. C'est donc la méthode que l'on choisira  finalement pour prévoir la température l'année suivant la dernière année d'observation.
+
+
+```{r}
+H=HoltWinters(Salvador.temp,seasonal = "additive")
+pred_2023<-predict(H, n.ahead=36)
+pred_2023
+```
+
+
+```{r, echo=FALSE}
+plot(HWSA,main=" Température de 73 à 2006 avec prévisions de 2007 à 2019/2023 (Salvador)",ylab="obs. (noir)/ ajus. (rouge)",
+     ylim=c(15,35),xlim=c(1973,2023))
+
+psac<-predict(HWSA, n.ahead=164, prediction.interval = T)
+#lines(HWSA$fitted[,1],lty=2,col=3)
+lines(Salvador.temp)
+lines(psac[,1],col=2,lty=2)
+lines(psac[,2],col=3,lty=3)
+lines(psac[,3],col=3,lty=3)
+lines(pred_2023, col=4,lty=4)
+RMSE_HWSA=sqrt(mean(psac[,1]-test)^2)
+abline(v=2006)
+text(1980,32,paste0("RMSE = ",round(RMSE_HWSA,3)),col=1,cex=0.9)
+
+```
+
+
+
+### partie résiduelle et ARMA
+```{r}
+# Bruit
+Salvador.temp_bruit = Salvador.temp_des - lm1$fitted.values
+```
+
+```{r}
+Box.test(diff(Salvador.temp, lag = 12), type = "Box-Pierce")
+Box.test(diff(Salvador.temp, lag = 12), type = "Ljung")
+```
+
+
+```{r}
+par(mfrow=c(1,3))
+acf(diff(Salvador.temp, lag = 12))
+p = 2.2e-16
+text(1,0.95,paste0("p-value BP < ",p,col=1,cex=1))
+pacf(diff(Salvador.temp, lag = 12))
+text(1,0.44,paste0("p-value BL < ",p,col=1,cex=1))
+qqnorm(diff(Salvador.temp, lag = 12));qqline(diff(Salvador.temp, lag = 12),col=2)
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+plot(diff(Salvador.temp, lag = 12), lwd=1.5, col="dark green", main="Moyenne mensuelle de la partie résiduelle de Salvador", xlab = "Années", ylab = "Température")
+acf(diff(Salvador.temp, lag = 12), main="acf de la partie résiduelle de Salvador")
+```
+
+```{r}
+pacf(diff(Salvador.temp, lag = 12))
+```
+p = 3 et q = 7
+
+```{r}
+d = auto.arima(diff(Salvador.temp, lag = 12))
+dd = forecast(d, h=12)
+dd$lower; dd$upper
+```
+
+
+```{r}
+autoplot(forecast(d, h=12))+
+ggtitle('Modèle auto.arima du  résidus de Salvador (p = 2 et q = 2) pour h = 12 mois')+
+xlab('Années')+
+ylab('Température')
+```
+
+
+
+```{r}
+d1 = Arima(diff(Salvador.temp, lag = 12), order = c(3,0,7))
+d2 = Arima(diff(Salvador.temp, lag = 12), order = c(7,0,3))
+d3 = Arima(diff(Salvador.temp, lag = 12), order = c(3,0,0))
+d4 = Arima(diff(Salvador.temp, lag = 12), order = c(0,0,7))
+d1;d2;d3;d4
+```

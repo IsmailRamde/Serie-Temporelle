@@ -1,0 +1,363 @@
+---
+title: "Projet Serie temporelle (jeu de données Sao-Paulo)"
+author: "N'DOYE EL Hadrami, RAMDE Ismaïl et MARAME DIAGNE"
+date: "18/01/2022"
+output: pdf_document
+---
+
+```{r}
+# load data
+library(reshape2)
+library(ggplot2)
+dataset = read.csv("data/station_sao_paulo.csv")
+dataset_month = dataset[,2:13]
+```
+
+```{r}
+#Combinaison de données mensuelles dans un seul tableau
+dataset_month = dataset[,2:13]
+```
+
+```{r}
+dataset.time<-matrix(data = NA, nrow = 492, ncol = 1, byrow = FALSE, dimnames = NULL)
+colnames(dataset.time)<-c("Moyenne_temperatures")
+```
+
+```{r}
+for(i in seq(1:492)) { 
+  ifelse(dataset_month[trunc((i-1)/12)+1,i-trunc((i-1)/12)*12]==999.9,
+         dataset.time[i,1]<-NA,dataset.time[i,1]<-dataset_month[trunc((i-1)/12)+1,i-trunc((i-1)/12)*12])
+}
+```
+
+```{r}
+data_s.Omit<-na.omit(as.data.frame(dataset.time))
+head(data_s.Omit)
+```
+
+```{r}
+dataset_year = dataset[,1:13]
+write.table(dataset_month,"dataset_scan.csv", row.names = FALSE,quote = FALSE)
+data_clean = read.csv("dataset_scan.csv",sep=" ")
+data_clean_mat = as.matrix(data_clean)
+for(i in 1:dim(data_clean_mat)[1]){
+  for(j in 1:dim(data_clean_mat)[2]){
+    if(data_clean_mat[i,j] == 999.9){
+      data_clean_mat[i,j] = NA
+      data_clean_mat[i,j] = median(data_clean_mat[,j],na.rm=TRUE)
+    }
+  }
+}
+write.table(data_clean_mat,"mydata.csv", row.names = FALSE,quote = FALSE)
+dataset_scan = scan("mydata.csv",skip=1)
+# Construction de la serie
+mydata_ts = ts(dataset_scan,start = c(1973,1),end=c(2019,12),frequency = 12)
+```
+
+**Representation de la serie**
+
+```{r}
+library(forecast)
+library(ggplot2)
+plot(mydata_ts, lwd=1.5, main="Moyenne mensuelle des températures de São Paulo", xlab = "Années", ylab = "Température",
+        xlim=c(1971,2019))
+```
+**Representation mensuelle**
+
+
+```{r}
+ggseasonplot(mydata_ts,year.labels= TRUE,year.labels.left=TRUE)+
+ggtitle('de São Paulo')+
+xlab('mois')+
+ylab('Temperature')
+```
+**Moyenne annuélle de la temperature**
+
+```{r}
+mydata_ts_df = as.vector(mydata_ts)
+mydata_ts_df = matrix(mydata_ts_df,nrow = 47,ncol=12,byrow = TRUE)
+mydata_ts_df = as.data.frame(mydata_ts_df)
+mydata_ts_mean = as.data.frame(apply(mydata_ts_df,1,mean))
+mydata_ts_mean$year = 1973:2019
+colnames(mydata_ts_mean) = c("temperature moyenne",'year')
+```
+
+```{r}
+plot(mydata_ts_mean$`year`,mydata_ts_mean$`temperature moyenne`,
+     type="l",xlab = "année",ylab = "température",col="blue",
+     main="température moyenne par année")
+```
+```{r}
+decomp = decompose(mydata_ts)
+mean(mydata_ts - decomp$seasonal)
+```
+
+
+**Effets saisonniers**
+
+```{r}
+library(forecast)
+ggseasonplot(mydata_ts,year.labels= TRUE,year.labels.left=TRUE)+
+ggtitle('Effets saisonniers de 1960 à 2020')+
+xlab('mois')+
+ylab('Temperature moyenne')
+```
+
+### Prédiction avec les méthodes de lissage
+
+Pour faire le meilleur choix de la méthode de lissage on prend environ 80% de la série pour constituer
+l’échantillon d’apprentissage (les 38 années de 1973 à 2019) et le reste (les 9 dernières années) pour l’échantillon
+test.
+
+```{r}
+n_train = 12*38
+n_test = 12*9
+Sao_paulo_train = head(mydata_ts,n_train)
+Sao_paulo_test = tail(mydata_ts,n_test)
+# Lissage Exponentielle 
+LES = HoltWinters(Sao_paulo_train,beta=FALSE, gamma = FALSE)
+ps = predict(LES, n.ahead = n_test)
+RMSE_LES=sqrt(mean(ps-Sao_paulo_test)^2)
+```
+
+```{r}
+# Lissage double
+alp_opt<-(1:9)/10
+alp_opt<-(1:9)/10
+RMSE_LED=rep(0,9)
+for (k in (1:9))
+{
+  LED=HoltWinters(Sao_paulo_train,alpha=alp_opt[k]*(2-alp_opt[k]),
+                  beta=alp_opt[k]/(2-alp_opt[k]),gamma=FALSE)
+  pd<-predict(LED, n.ahead=n_test)
+  RMSE_LED[k]=sqrt(mean(pd-Sao_paulo_test)^2)
+}
+which((RMSE_LED<=min(RMSE_LED))==TRUE)*0.1->alp # meilleur lissage à 10^-1 près pour LED
+LED=HoltWinters(Sao_paulo_train,alpha=alp*(2-alp), beta=alp/(2-alp),gamma=FALSE)
+pd<-predict(LED, n_test)
+RMSE_LED=sqrt(mean(pd-Sao_paulo_test)^2)
+```
+
+```{r}
+#lissage de HoltWinters non saisonnier
+HWNS=HoltWinters(Sao_paulo_train,gamma=FALSE)
+pns<-predict(HWNS, n_test)
+RMSE_HWNS=sqrt(mean(pns-Sao_paulo_test)^2)
+```
+
+```{r}
+#lissage de HoltWinters saisonnier additif
+HWSA=HoltWinters(Sao_paulo_train,seasonal = "additive")
+psa<-predict(HWSA, n_test)
+RMSE_HWSA=sqrt(mean(psa-Sao_paulo_test)^2)
+```
+
+```{r}
+#lissage de HoltWinters saisonnier multiplicatif
+HWSM=HoltWinters(Sao_paulo_train,seasonal = "multiplicative")
+psm<-predict(HWSM, n_test)
+RMSE_HWSM=sqrt(mean(psm-Sao_paulo_test)^2)
+```
+
+```{r}
+RMSE_LES
+RMSE_LED
+RMSE_HWNS
+RMSE_HWSA
+RMSE_HWSM
+MSE = rbind(RMSE_LES,RMSE_LED,RMSE_HWNS,RMSE_HWSA,RMSE_HWSM)
+rownames(MSE) = c("LES","LED","HWNS","HWSA","HWSM")
+colnames(MSE) = "MSE"
+```
+
+S’agissant de la prévision sur les huit dernières années, de toute évidence le lissage de HoltWinters multiplicative est
+le meilleur. C’est donc la méthode que l’on choisira finalement pour prévoir la temperature mensuelle suivant
+la dernière année d’observation.
+
+```{r}
+# HWSA=HoltWinters(mydata_ts,seasonal = "additive")
+# psa<-predict(HWSA, n.ahead=n_test,prediction.interval = TRUE)
+# plot(HWSA,psa)
+```
+
+```{r}
+H=HoltWinters(mydata_ts,seasonal = "additive")
+pred_2023<-predict(H, n.ahead=36)
+pred_2023
+```
+
+```{r}
+plot(HWSA,main=" Température de 73 à 2010 avec prévisions de 2011 à 2023(São Paulo)",ylab="obs. (noir)/ ajus. (rouge)",
+     ylim=c(10,35),xlim=c(1973,2023))
+
+psac<-predict(HWSA, n.ahead=n_test, prediction.interval = T)
+#lines(HWSA$fitted[,1],lty=2,col=3)
+lines(mydata_ts)
+lines(psac[,1],col=2,lty=2)
+lines(psac[,2],col=3,lty=3)
+lines(psac[,3],col=3,lty=3)
+lines(pred_2023, col=4,lty=4)
+RMSE_HWSA=sqrt(mean(psac[,1]-Sao_paulo_test)^2)
+abline(v=2012)
+text(1980,32,paste0("RMSE = ",round(RMSE_HWSA,3)),col=1,cex=0.9)
+```
+
+
+
+Sur l'image ci-dessus on voit la prédiction de la temperature dans la ville de sao-paulo sur 10 années consecutives suivant la derniere observation.
+On costate que la variation de la temperature entre 2021 et 2030 est presque constante.
+
+ACF et PACF de la serie originale
+
+```{r}
+par(mfrow=c(1,2))
+# Tracage du acf
+acf(mydata_ts)
+pacf(mydata_ts)
+```
+
+
+
+```{r}
+acf(mydata_ts,lag.max=50,type="correlation", plot=TRUE,main="Auto-correlations de São Paulo")
+curve(cos(x*2*pi),col=3,add=TRUE)
+```
+
+**Ajustement de la tendance**
+
+```{r}
+autoplot(mydata_ts, series="Data") + 
+autolayer(ma(mydata_ts,50), series="MM(50)") +
+autolayer(ma(mydata_ts,300), series="MM(300)") +
+xlab("Année") + ylab("Température") +
+ggtitle("Moyenne annuelle des températures de São Paulo") +
+scale_colour_manual(
+values=c("Data"="grey50","MM(50)"="red","MM(300)"="blue"),
+breaks=c("Data","MM(50)","MM(300)"))
+```
+
+ACF suggere un MA(3)
+PACF suggere un AR(1)
+
+Graphiquement, on voit que la serie n'a pas de tendance mais dispose d'un effet saisonnier de periode 12
+, visible sur le graphe de L'ACF. 
+
+Voyons les resultats obtenue avec SARIMA.
+
+
+```{r}
+sar = Arima(mydata_ts,order=c(1,0,2),
+            seasonal = list(order=c(1,0,2),period=12))
+```
+
+```{r}
+sar
+```
+
+
+
+
+```{r}
+aut_arima = auto.arima(mydata_ts)
+aut_arima
+```
+On choisit le modéle obtenue par auto.arima car il minimise le BIC et le AIC, contrairement à SARIMA(1,0,2)(1,0,2)[12].
+
+### Prédiction avec ARIMA(1,0,2)(0,1,1)
+
+```{r}
+forecast(sar,h=1); forecast(aut_arima,h=1)
+```
+
+
+```{r}
+autoplot(forecast(aut_arima,h=36)) + xlab("Année") + ylab("Température") + 
+  ggtitle("Modéle auto-arima pour la ville de São Paulo")
+```
+
+
+
+Ici On enleve la saisonnalité en utilisant decompose puis on utilise ARMA pour prédire
+
+```{r}
+d = decompose(mydata_ts)
+mydata_ns = mydata_ts - d$seasonal
+```
+
+```{r}
+par(mfrow=c(1,2))
+acf(mydata_ns)
+pacf(mydata_ns)
+```
+
+
+```{r}
+mydata_nt_ns = diff(mydata_ns)
+plot(mydata_nt_ns)
+acf(mydata_nt_ns)
+pacf(mydata_nt_ns)
+```
+
+
+Ici on verifie que c'est pas un bruit blanc
+
+```{r}
+Box.test(mydata_nt_ns)
+```
+
+```{r}
+ar1 = Arima(mydata_nt_ns,order=c(1,0,0))
+ar2 = Arima(mydata_nt_ns,order=c(0,0,2))
+ar3 = Arima(mydata_nt_ns,order=c(1,0,2))
+BIC = rbind(ar1$bic,ar2$bic,ar3$bic)
+rownames(BIC) = c("ar1","ar2","ar3")
+```
+
+
+```{r}
+h = auto.arima(mydata_ns)
+```
+
+```{r}
+autoplot(forecast(h,h=36))
+```
+```{r}
+df_mydata_ts = diff(mydata_ts,lag = 12)
+acf(df_mydata_ts)
+pacf(df_mydata_ts)
+```
+
+ACF suggere un MA(q=4)
+PACF suggere un AR(p=1)
+
+```{r}
+ar1 = Arima(df_mydata_ts,order=c(1,0,0))
+ar2 = Arima(df_mydata_ts,order=c(0,0,2))
+ar3 = Arima(df_mydata_ts,order=c(1,0,2))
+BIC = rbind(ar1$bic,ar2$bic,ar3$bic)
+AIC = rbind(ar1$aic,ar2$aic,ar3$aic)
+rownames(BIC) = c("ar1","ar2","ar3")
+rownames(AIC) = rownames(BIC)
+BIC
+AIC
+```
+```{r}
+autoplot(forecast(ar1,h=36))
+```
+```{r}
+bxpierce =  Box.test(aut_arima$residuals,type="Box-Pierce")
+LB = Box.test(aut_arima$residuals,type="Ljung-Box")
+```
+
+```{r}
+par(mfrow=c(1,3))
+acf(aut_arima$residuals)
+text(1,0.8,paste0("pval BP = ",round(bxpierce$p.value,3)),col=1,cex=1)
+pacf(aut_arima$residuals)
+text(1,0.06,paste0("pval BL = ",round(LB $p.value,3)),col=1,cex=1)
+qqnorm(aut_arima$residuals);qqline(aut_arima$residuals,col=2)
+```
+```{r}
+
+```
+
